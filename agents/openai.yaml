@@ -1,0 +1,7 @@
+interface:
+  display_name: "PocketBase CLI"
+  short_description: "Install and operate the custom PocketBase CLI"
+  default_prompt: "Use $pocketbase-cli to install or repair the custom CLI, inspect its schema, run preflight checks, and execute a remote PocketBase task safely."
+
+policy:
+  allow_implicit_invocation: true
