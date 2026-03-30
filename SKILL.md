@@ -1,13 +1,13 @@
 ---
 name: pocketbase-cli
-description: Use when installing, building, repairing, discovering, or executing commands through this custom remote-only PocketBase CLI project against deployed PocketBase instances, especially for schema-driven JSON automation and admin workflows.
+description: Use for remote PocketBase tasks on deployed instances with this custom CLI, including login, CMS or config inspection, records, collections, files, logs, backups, install, repair, and admin workflows.
 metadata:
-  short-description: Install and operate the custom PocketBase CLI
+  short-description: Remote PocketBase admin and data tasks via the custom CLI
 ---
 
 # PocketBase CLI
 
-Use this skill when the task targets a deployed PocketBase instance and this custom remote-only CLI is the execution surface.
+Use this skill for deployed PocketBase work whenever the user wants to inspect or change backend data, CMS-style content, settings, files, logs, backups, auth, or CLI state through this custom remote-only CLI.
 
 Do not use this skill for local PocketBase process management such as `serve`, `migrate`, `update`, or other embedded-binary workflows. This CLI is strictly remote-first.
 
