@@ -93,8 +93,11 @@ EOF
 create_mock_toolchain() {
   local bin_dir="$1"
   local installed_help_text="$2"
+  local real_node
 
   mkdir -p "${bin_dir}"
+  real_node="$(command -v node)"
+  ln -s "${real_node}" "${bin_dir}/node"
 
   cat > "${bin_dir}/git" <<'EOF'
 #!/usr/bin/env bash
@@ -129,7 +132,19 @@ cmd="\${1:-}"
 shift || true
 
 case "\${cmd}" in
+  prefix)
+    if [[ "\${1:-}" == "-g" ]]; then
+      mkdir -p "${bin_dir}/global-prefix"
+      printf '%s\n' "${bin_dir}/global-prefix"
+      exit 0
+    fi
+    echo "unexpected npm prefix invocation: \$*" >&2
+    exit 1
+    ;;
   ci|install)
+    if [[ "\${1:-}" == "-g" ]]; then
+      exit 0
+    fi
     exit 0
     ;;
   run)
@@ -166,15 +181,45 @@ EOF
   chmod +x "${bin_dir}/npm"
 }
 
+create_compatible_path_cli() {
+  local bin_dir="$1"
+  local help_text="$2"
+
+  cat > "${bin_dir}/pocketbase-cli" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "\${1:-}" == "schema" && "\${2:-}" == "--json" ]]; then
+  printf '%s\n' '{"tool":"pocketbase-cli","mode":"remote-only"}'
+  exit 0
+fi
+
+if [[ " \$* " == *" --help "* ]]; then
+  printf '%s\n' "${help_text}"
+  exit 0
+fi
+
+printf '%s\n' "\$*"
+EOF
+  chmod +x "${bin_dir}/pocketbase-cli"
+}
+
 test_missing_env_bin_fallback() {
-  local root skill_copy output
+  local root skill_copy output home_dir mockbin sanitized_path
 
   root="${tmp_root}/test-missing-bin"
+  home_dir="${root}/home"
+  mkdir -p "${home_dir}"
   skill_copy="$(setup_skill_copy "${root}")"
   create_compatible_repo "${root}/Pocketbase-CLI" "default-help-ok"
+  mockbin="${root}/mockbin"
+  create_mock_toolchain "${mockbin}" "unused-help-ok"
+  sanitized_path="${mockbin}:/usr/bin:/bin"
 
   output="$(
-    env POCKETBASE_CLI_BIN=/definitely/missing \
+    env HOME="${home_dir}" \
+      PATH="${sanitized_path}" \
+      POCKETBASE_CLI_BIN=/definitely/missing \
       "${skill_copy}/scripts/run-pocketbase-cli.sh" --help 2>&1
   )"
 
@@ -184,15 +229,22 @@ test_missing_env_bin_fallback() {
 }
 
 test_incompatible_repo_candidate_rejected() {
-  local root skill_copy output
+  local root skill_copy output home_dir mockbin sanitized_path
 
   root="${tmp_root}/test-incompatible-repo"
+  home_dir="${root}/home"
+  mkdir -p "${home_dir}"
   skill_copy="$(setup_skill_copy "${root}")"
   create_compatible_repo "${root}/Pocketbase-CLI" "default-help-ok"
   create_incompatible_repo "${root}/occupied-repo"
+  mockbin="${root}/mockbin"
+  create_mock_toolchain "${mockbin}" "unused-help-ok"
+  sanitized_path="${mockbin}:/usr/bin:/bin"
 
   output="$(
-    env POCKETBASE_CLI_REPO="${root}/occupied-repo" \
+    env HOME="${home_dir}" \
+      PATH="${sanitized_path}" \
+      POCKETBASE_CLI_REPO="${root}/occupied-repo" \
       "${skill_copy}/scripts/run-pocketbase-cli.sh" --help 2>&1
   )"
 
@@ -202,19 +254,48 @@ test_incompatible_repo_candidate_rejected() {
   pass "runner rejects incompatible repo candidates before fallback"
 }
 
+test_global_path_cli_preferred() {
+  local root skill_copy output home_dir mockbin sanitized_path
+
+  root="${tmp_root}/test-path-cli-preferred"
+  home_dir="${root}/home"
+  mkdir -p "${home_dir}"
+  skill_copy="$(setup_skill_copy "${root}")"
+  create_compatible_repo "${root}/Pocketbase-CLI" "default-help-ok"
+  mockbin="${root}/mockbin"
+  create_mock_toolchain "${mockbin}" "unused-help-ok"
+  create_compatible_path_cli "${mockbin}" "path-help-ok"
+  sanitized_path="${mockbin}:/usr/bin:/bin"
+
+  output="$(
+    env HOME="${home_dir}" \
+      PATH="${sanitized_path}" \
+      "${skill_copy}/scripts/run-pocketbase-cli.sh" --help 2>&1
+  )"
+
+  assert_contains "${output}" "path-help-ok" "path cli preferred"
+  assert_not_contains "${output}" "default-help-ok" "path cli preferred"
+  pass "runner prefers compatible pocketbase-cli on PATH before repo fallbacks"
+}
+
 test_install_fallback_runtime_reload() {
-  local root skill_copy mockbin output state_file state_repo expected_runtime_dir
+  local root skill_copy mockbin output state_file state_repo shared_repo sanitized_path home_dir
 
   root="${tmp_root}/test-install-fallback"
+  home_dir="${root}/home"
+  mkdir -p "${home_dir}"
   skill_copy="$(setup_skill_copy "${root}")"
   mkdir -p "${root}/occupied-repo" "${root}/Pocketbase-CLI"
   printf 'not-a-repo\n' > "${root}/occupied-repo/README.txt"
   printf 'not-a-repo\n' > "${root}/Pocketbase-CLI/README.txt"
   mockbin="${root}/mockbin"
   create_mock_toolchain "${mockbin}" "installed-help-ok"
+  sanitized_path="${mockbin}:/usr/bin:/bin"
+  shared_repo="${home_dir}/.local/share/pocketbase-cli"
 
   output="$(
-    env PATH="${mockbin}:${PATH}" \
+    env HOME="${home_dir}" \
+      PATH="${sanitized_path}" \
       POCKETBASE_CLI_REPO="${root}/occupied-repo" \
       "${skill_copy}/scripts/run-pocketbase-cli.sh" --help 2>&1
   )"
@@ -225,17 +306,17 @@ test_install_fallback_runtime_reload() {
   [[ -f "${state_file}" ]] || fail "install fallback runtime reload: missing ${state_file}"
   state_repo="$(head -n 1 "${state_file}")"
   [[ -n "${state_repo}" ]] || fail "install fallback runtime reload: empty repo_path"
-  expected_runtime_dir="$(cd "${skill_copy}/.runtime" && pwd)"
-  [[ "${state_repo}" == "${expected_runtime_dir}/Pocketbase-CLI."* ]] ||
-    fail "install fallback runtime reload: expected runtime repo path, got ${state_repo}"
+  [[ "${state_repo}" == "${shared_repo}" ]] ||
+    fail "install fallback runtime reload: expected shared repo path ${shared_repo}, got ${state_repo}"
   [[ -f "${state_repo}/dist/bin.js" ]] ||
     fail "install fallback runtime reload: built CLI missing at ${state_repo}/dist/bin.js"
 
-  pass "runner reloads .runtime repo_path after automatic install fallback"
+  pass "runner reloads shared repo path after automatic install fallback"
 }
 
 test_missing_env_bin_fallback
 test_incompatible_repo_candidate_rejected
+test_global_path_cli_preferred
 test_install_fallback_runtime_reload
 
 printf '\nAll self-tests passed.\n'

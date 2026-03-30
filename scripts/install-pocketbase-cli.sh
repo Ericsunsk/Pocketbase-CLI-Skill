@@ -3,10 +3,10 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 skill_dir="$(cd "${script_dir}/.." && pwd)"
-default_repo="$(cd "${skill_dir}/.." && pwd)/Pocketbase-CLI"
 repo_url="https://github.com/Ericsunsk/Pocketbase-CLI.git"
 runtime_dir="${skill_dir}/.runtime"
 repo_state_file="${runtime_dir}/repo_path"
+shared_repo="${POCKETBASE_CLI_SHARED_REPO:-$HOME/.local/share/pocketbase-cli}"
 
 log() {
   printf '[pocketbase-cli-install] %s\n' "$*"
@@ -46,17 +46,17 @@ record_repo_path() {
 }
 
 choose_repo_dir() {
-  local preferred_repo="${POCKETBASE_CLI_REPO:-${default_repo}}"
+  local preferred_repo="${POCKETBASE_CLI_REPO:-}"
   local state_repo=""
-  local temp_repo=""
 
-  if repo_dir_looks_compatible "${preferred_repo}" || [[ ! -e "${preferred_repo}" ]]; then
+  if [[ -n "${preferred_repo}" ]] &&
+    { repo_dir_looks_compatible "${preferred_repo}" || [[ ! -e "${preferred_repo}" ]]; }; then
     printf '%s\n' "${preferred_repo}"
     return 0
   fi
 
-  if repo_dir_looks_compatible "${default_repo}" || [[ ! -e "${default_repo}" ]]; then
-    printf '%s\n' "${default_repo}"
+  if repo_dir_looks_compatible "${shared_repo}" || [[ ! -e "${shared_repo}" ]]; then
+    printf '%s\n' "${shared_repo}"
     return 0
   fi
 
@@ -68,9 +68,7 @@ choose_repo_dir() {
     fi
   fi
 
-  mkdir -p "${runtime_dir}"
-  temp_repo="$(mktemp -d "${runtime_dir}/Pocketbase-CLI.XXXXXX")"
-  printf '%s\n' "${temp_repo}"
+  printf '%s\n' "${shared_repo}"
 }
 
 install_dependencies() {
@@ -84,14 +82,23 @@ install_dependencies() {
   (cd "${dir}" && npm install)
 }
 
+install_globally() {
+  local dir="$1"
+  local global_prefix=""
+
+  global_prefix="$(npm prefix -g 2>/dev/null || true)"
+  if [[ -n "${global_prefix}" && -d "${global_prefix}" && -w "${global_prefix}" ]]; then
+    (cd "${dir}" && npm install -g .)
+    return 0
+  fi
+
+  global_prefix="${POCKETBASE_CLI_NPM_PREFIX:-$HOME/.local}"
+  mkdir -p "${global_prefix}"
+  (cd "${dir}" && npm install -g . --prefix "${global_prefix}")
+}
+
 repo_dir="$(choose_repo_dir)"
 bin_js="${repo_dir}/dist/bin.js"
-
-if [[ -f "${bin_js}" ]]; then
-  record_repo_path "${repo_dir}"
-  log "CLI build already available at ${bin_js}."
-  exit 0
-fi
 
 if repo_dir_looks_compatible "${repo_dir}"; then
   log "Using existing repo at ${repo_dir}."
@@ -106,6 +113,7 @@ else
     exit 1
   fi
 
+  mkdir -p "$(dirname "${repo_dir}")"
   log "Cloning ${repo_url} into ${repo_dir}."
   git clone "${repo_url}" "${repo_dir}"
 fi
@@ -120,11 +128,23 @@ if [[ ! -f "${repo_dir}/package.json" ]]; then
   exit 1
 fi
 
-log "Installing npm dependencies."
-install_dependencies "${repo_dir}"
+if [[ -x "${repo_dir}/scripts/install-global.sh" ]]; then
+  log "Installing PocketBase CLI globally via repo installer."
+  (
+    cd "${repo_dir}" &&
+      POCKETBASE_CLI_INSTALL_DIR="${repo_dir}" \
+      "${repo_dir}/scripts/install-global.sh"
+  )
+else
+  log "Installing npm dependencies."
+  install_dependencies "${repo_dir}"
 
-log "Building CLI."
-(cd "${repo_dir}" && npm run build)
+  log "Building CLI."
+  (cd "${repo_dir}" && npm run build)
+
+  log "Installing PocketBase CLI globally."
+  install_globally "${repo_dir}"
+fi
 
 if [[ ! -f "${bin_js}" ]]; then
   log "Build completed but ${bin_js} was not created."

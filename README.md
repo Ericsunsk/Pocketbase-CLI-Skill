@@ -33,7 +33,14 @@ bash install.sh
 
 ## 运行方式
 
-安装后的 skill 会优先通过 `scripts/run-pocketbase-cli.sh` 解析 CLI 入口；如果当前没有可执行 CLI，会优先复用本地兼容源码仓库并构建，否则从 `https://github.com/Ericsunsk/Pocketbase-CLI` 拉取源码并完成安装。
+安装后的 skill 会先按下面的顺序解析 CLI 入口：
+
+1. `POCKETBASE_CLI_BIN`
+2. 已在 `PATH` 上且兼容的全局 `pocketbase-cli`
+3. 兼容的 repo 构建产物
+4. 都没有时再自动安装
+
+自动安装现在会把 CLI 共享安装到 `~/.local/share/pocketbase-cli`，并安装全局 `pocketbase-cli` 命令。这样同一台机器上的多个 agent 可以复用同一份 CLI，而不是各自维护临时副本。
 
 ## 仓库内容
 

@@ -33,23 +33,25 @@ Automatic install source:
 
 The preferred install flow is:
 
-1. if a local PocketBase CLI source repo already exists, reuse it and build it
-2. otherwise clone the repo
-3. run `npm ci` when a lockfile exists, otherwise `npm install`
+1. if `POCKETBASE_CLI_REPO` points at a compatible source repo, reuse it
+2. otherwise install or update a shared checkout under `~/.local/share/pocketbase-cli`
+3. run the repo installer when available, otherwise run `npm ci` or `npm install`
 4. run `npm run build`
-5. retry the original CLI command
+5. install the global `pocketbase-cli` command
+6. retry the original CLI command
 
 Only stop and report back to the user if auto-install fails because of environment, network, git, or npm errors.
 
 Resolution order:
 
 1. `POCKETBASE_CLI_BIN`
-2. `POCKETBASE_CLI_REPO/dist/bin.js`
-3. sibling repo `../Pocketbase-CLI/dist/bin.js`
-4. last auto-installed repo recorded under `.runtime/repo_path`
-5. a verified `pocketbase-cli` on `PATH`
+2. a verified `pocketbase-cli` on `PATH`
+3. `POCKETBASE_CLI_REPO/dist/bin.js`
+4. sibling repo `../Pocketbase-CLI/dist/bin.js`
+5. last auto-installed repo recorded under `.runtime/repo_path`
 
 If a compatible source repo exists but `dist/bin.js` does not, the install helper should build it before use.
+The auto-install path is intentionally shared across agents on the same machine so one successful install can be reused.
 
 ## Core rules
 

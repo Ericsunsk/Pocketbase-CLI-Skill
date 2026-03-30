@@ -16,13 +16,21 @@ If this fails because no executable CLI is available yet, auto-install it from:
 
 Preferred sequence:
 
-1. if a compatible local PocketBase CLI source checkout already exists, reuse it and build it
-2. otherwise clone the repository
-3. run `npm ci` when a lockfile exists, otherwise `npm install`
+1. if `POCKETBASE_CLI_REPO` points at a compatible source checkout, reuse it
+2. otherwise install or update the shared checkout under `~/.local/share/pocketbase-cli`
+3. run the repo installer when available, otherwise run `npm ci` when a lockfile exists, or `npm install`
 4. run `npm run build`
-5. retry `./scripts/run-pocketbase-cli.sh --help`
+5. install the global `pocketbase-cli` command
+6. retry `./scripts/run-pocketbase-cli.sh --help`
 
 Only stop and ask the user for help if that automatic install fails.
+
+Runtime lookup preference is:
+
+1. `POCKETBASE_CLI_BIN`
+2. a compatible global `pocketbase-cli` already on `PATH`
+3. compatible repo builds such as `POCKETBASE_CLI_REPO/dist/bin.js`
+4. automatic install or update if none of the above are usable
 
 ## 1. Discovery first
 

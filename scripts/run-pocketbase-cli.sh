@@ -99,6 +99,10 @@ if [[ -n "${POCKETBASE_CLI_BIN:-}" ]]; then
   fi
 fi
 
+if path_cli_is_compatible; then
+  exec pocketbase-cli "$@"
+fi
+
 repo_dir="${POCKETBASE_CLI_REPO:-${default_repo}}"
 state_repo="$(load_state_repo)"
 
